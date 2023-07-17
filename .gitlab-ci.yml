@@ -1,0 +1,73 @@
+# stages definition
+stages:
+  - authenticate
+  - terraform_validate
+  - terraform_plan
+  - terraform_apply
+
+#default settings for each stage. It is possible to overwrite this in the stage.
+default:
+  image:
+    name: hashicorp/terraform:light #terraform docker image used for installation of Terraform on the runner
+    entrypoint:
+      - '/usr/bin/env'
+      - 'PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
+  before_script:
+    - mkdir -p ~/.aws #creation of aws default path for profile
+    - cp config/credentials ~/.aws/credentials #copying of the artifact from authentication stage
+    - touch ~/.git-credentials #creating git-credetials file for CI_JOB_TOKEN
+    - git config --global credential.helper store #configuration of credential helper
+    - echo "https://gitlab-ci-token:${Token_Terraform_Modules}@gitlab.com" > ~/.git-credentials #setting CI_JOB_TOKEN as identity for git
+    - terraform version
+    - terraform init -backend-config="backend/dev.tf" #init of Terraform backend
+
+authenticate:
+  stage: authenticate
+  image:
+    name: amazon/aws-cli:latest
+    entrypoint: [""]
+  before_script:
+    - aws --version
+  script:
+    #Role assumption
+    - role=$(aws sts assume-role-with-web-identity --role-arn ${ROLE_ARN} --role-session-name "GitLabRunner-${CI_PROJECT_ID}-${CI_PIPELINE_ID}" --web-identity-token $CI_JOB_JWT_V2 --duration 3600 --query 'Credentials.[AccessKeyId,SecretAccessKey,SessionToken]' --output text) 
+    #Creation of credential file
+    - mkdir -p config
+    - touch config/credentials
+    #Saving credentials to a file
+    - echo "[default]" > config/credentials
+    - echo "aws_access_key_id = ${role[0]}" >> config/credentials
+    - echo "aws_secret_access_key = ${role[1]}" >> config/credentials
+    - echo "aws_session_token = ${role[2]}" >> config/credentials
+    #Session name in AWS for troubleshooting purposes (e.g. in CloudTrail)
+    - echo -e "AWS session name is \e[93mGitLabRunner-${CI_PROJECT_ID}-${CI_PIPELINE_ID}\e[0m"
+  artifacts:
+    paths:
+      - config/credentials
+
+terraform_validate:
+  stage: terraform_validate
+  dependencies:
+    - authenticate
+  script:
+    - terraform validate
+
+terraform_plan:
+  stage: terraform_plan
+  dependencies:
+    - authenticate
+  script:
+    - terraform plan --var-file="tfvars/dev.tfvars" -out "development-plan.json"
+  artifacts:
+    paths:
+      - "development-plan.json"
+  allow_failure: false
+
+#terraform_apply: 
+#  stage: terraform_apply 
+#  dependencies:
+#    - authenticate
+#    - terraform_plan
+#  script:
+#    - terraform apply "development-plan.json"
+#  when: manual
