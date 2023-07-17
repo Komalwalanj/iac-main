@@ -1,0 +1,18 @@
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Principal": {
+                "Federated": "arn:aws:iam::769453588195:oidc-provider/gitlab.com"
+            },
+            "Action": "sts:AssumeRoleWithWebIdentity",
+            "Condition": {
+                "StringLike": {
+                    "gitlab.com:sub": "project_path:syngentagroup/pollencounting-prod/pollencounting-prod:ref_type:branch:ref:main",
+                    "gitlab.com:aud": "https://gitlab.com"
+                }
+            }
+        }
+    ]
+}
